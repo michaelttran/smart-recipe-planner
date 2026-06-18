@@ -1,31 +1,52 @@
 import { useLocalSearchParams, useNavigation } from 'expo-router';
-import { useLayoutEffect } from 'react';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import { getStore } from '@/lib/store';
+import { useLayoutEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { getStore, toggleFavorite, isFavorite } from '@/lib/store';
 import { Recipe } from '@/types/recipe';
 
-const DIFFICULTY_COLORS: Record<Recipe['difficulty'], string> = {
-  easy: '#22c55e',
-  medium: '#f59e0b',
-  hard: '#ef4444',
+const BRAND = '#2D4A1E';
+
+const DIFFICULTY_LABEL: Record<Recipe['difficulty'], string> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Advanced',
 };
 
 export default function RecipeDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const navigation = useNavigation();
   const store = getStore();
-  const recipe = store.recipes[Number(id)];
+
+  const recipe = id.startsWith('fav-')
+    ? store.favorites.find((r) => r.id === id.slice(4))
+    : store.recipes[Number(id)];
+
+  const [favorited, setFavorited] = useState(
+    recipe ? isFavorite(recipe.id) : false
+  );
 
   useLayoutEffect(() => {
-    if (recipe) {
-      navigation.setOptions({ title: recipe.name });
-    }
-  }, [recipe?.name]);
+    if (!recipe) return;
+    navigation.setOptions({
+      title: '',
+      headerRight: () => (
+        <Pressable onPress={handleToggleFavorite} hitSlop={12} style={{ marginRight: 4 }}>
+          <Ionicons
+            name={favorited ? 'bookmark' : 'bookmark-outline'}
+            size={22}
+            color={favorited ? BRAND : '#AAAAAA'}
+          />
+        </Pressable>
+      ),
+    });
+  }, [recipe?.name, favorited]);
+
+  function handleToggleFavorite() {
+    if (!recipe) return;
+    toggleFavorite(recipe);
+    setFavorited(isFavorite(recipe.id));
+  }
 
   if (!recipe) {
     return (
@@ -41,91 +62,80 @@ export default function RecipeDetailScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
-      {/* Hero section */}
-      <View style={styles.hero}>
-        <Text style={styles.recipeName}>{recipe.name}</Text>
-        <Text style={styles.description}>{recipe.description}</Text>
-      </View>
-
-      {/* Stats row */}
-      <View style={styles.statsRow}>
-        <Stat label="Prep" value={recipe.prepTime} />
-        <View style={styles.statDivider} />
-        <Stat label="Cook" value={recipe.cookTime} />
-        <View style={styles.statDivider} />
-        <Stat label="Total" value={recipe.totalTime} />
-        <View style={styles.statDivider} />
-        <Stat label="Serves" value={String(recipe.servings)} />
-      </View>
-
-      {/* Difficulty & tags */}
-      <View style={styles.metaRow}>
-        <View
-          style={[
-            styles.difficultyBadge,
-            { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] + '20' },
-          ]}
-        >
-          <View
-            style={[
-              styles.difficultyDot,
-              { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] },
-            ]}
-          />
-          <Text
-            style={[
-              styles.difficultyText,
-              { color: DIFFICULTY_COLORS[recipe.difficulty] },
-            ]}
-          >
-            {recipe.difficulty.charAt(0).toUpperCase() +
-              recipe.difficulty.slice(1)}
-          </Text>
+      {/* Hero title */}
+      <View style={styles.titleSection}>
+        <View style={styles.titleRow}>
+          <Text style={styles.recipeName}>{recipe.name}</Text>
+          <Pressable onPress={handleToggleFavorite} hitSlop={12} style={styles.bookmarkInline}>
+            <Ionicons
+              name={favorited ? 'bookmark' : 'bookmark-outline'}
+              size={26}
+              color={favorited ? BRAND : '#CCCCCC'}
+            />
+          </Pressable>
         </View>
-        {recipe.tags.map((tag) => (
-          <View key={tag} style={styles.tag}>
-            <Text style={styles.tagText}>{tag}</Text>
+        <View style={[styles.titleRule, favorited && styles.titleRuleActive]} />
+        <Text style={styles.description}>{recipe.description}</Text>
+
+        {recipe.tags.length > 0 && (
+          <View style={styles.tags}>
+            {recipe.tags.map((tag) => (
+              <View key={tag} style={styles.tag}>
+                <Text style={styles.tagText}>{tag}</Text>
+              </View>
+            ))}
           </View>
-        ))}
+        )}
+      </View>
+
+      {/* At-a-glance bar */}
+      <View style={styles.glanceBar}>
+        <GlanceStat label="Prep time" value={recipe.prepTime} />
+        <View style={styles.glanceDivider} />
+        <GlanceStat label="Cook time" value={recipe.cookTime} />
+        <View style={styles.glanceDivider} />
+        <GlanceStat label="Total time" value={recipe.totalTime} />
+        <View style={styles.glanceDivider} />
+        <GlanceStat label="Serves" value={String(recipe.servings)} />
+        <View style={styles.glanceDivider} />
+        <GlanceStat label="Difficulty" value={DIFFICULTY_LABEL[recipe.difficulty]} />
       </View>
 
       {/* Ingredients */}
-      <SectionHeader title="Ingredients" count={recipe.ingredients.length} />
-      <View style={styles.card}>
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Ingredients</Text>
+          <Text style={styles.sectionCount}>{recipe.ingredients.length} items</Text>
+        </View>
         {recipe.ingredients.map((ingredient, i) => (
           <View
             key={i}
-            style={[
-              styles.ingredientRow,
-              i < recipe.ingredients.length - 1 && styles.ingredientRowBorder,
-            ]}
+            style={[styles.ingredientRow, i === 0 && styles.ingredientFirst]}
           >
-            <View style={styles.ingredientBullet} />
-            <View style={styles.ingredientInfo}>
-              <Text style={styles.ingredientName}>{ingredient.name}</Text>
-              {ingredient.notes ? (
-                <Text style={styles.ingredientNotes}>{ingredient.notes}</Text>
-              ) : null}
-            </View>
+            <View style={styles.ingredientCheck} />
             <Text style={styles.ingredientAmount}>
-              {ingredient.amount}
-              {ingredient.unit ? ` ${ingredient.unit}` : ''}
+              {ingredient.amount} {ingredient.unit}
+            </Text>
+            <Text style={styles.ingredientName}>
+              {ingredient.name}
+              {ingredient.notes ? (
+                <Text style={styles.ingredientNotes}>, {ingredient.notes}</Text>
+              ) : null}
             </Text>
           </View>
         ))}
       </View>
 
       {/* Instructions */}
-      <SectionHeader
-        title="Instructions"
-        count={recipe.instructions.length}
-        label="steps"
-      />
-      <View style={styles.instructionsList}>
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Preparation</Text>
+          <Text style={styles.sectionCount}>{recipe.instructions.length} steps</Text>
+        </View>
         {recipe.instructions.map((step, i) => (
-          <View key={i} style={styles.instructionRow}>
-            <View style={styles.stepNumber}>
-              <Text style={styles.stepNumberText}>{i + 1}</Text>
+          <View key={i} style={styles.stepRow}>
+            <View style={styles.stepLeft}>
+              <Text style={styles.stepNum}>{i + 1}</Text>
             </View>
             <Text style={styles.stepText}>{step}</Text>
           </View>
@@ -135,236 +145,160 @@ export default function RecipeDetailScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function GlanceStat({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-function SectionHeader({
-  title,
-  count,
-  label = 'items',
-}: {
-  title: string;
-  count: number;
-  label?: string;
-}) {
-  return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{title}</Text>
-      <Text style={styles.sectionCount}>
-        {count} {label}
-      </Text>
+    <View style={styles.glanceStat}>
+      <Text style={styles.glanceLabel}>{label}</Text>
+      <Text style={styles.glanceValue}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fafaf8',
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 48,
-  },
+  container: { flex: 1, backgroundColor: '#F5F0E8' },
+  content: { paddingBottom: 64 },
   errorContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#F5F0E8',
   },
-  errorText: {
-    fontSize: 16,
-    color: '#6b7280',
+  errorText: { fontSize: 15, color: '#6B6B6B' },
+
+  titleSection: {
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
   },
-  hero: {
-    marginBottom: 20,
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 10,
   },
   recipeName: {
-    fontSize: 28,
+    flex: 1,
+    fontSize: 30,
     fontWeight: '800',
-    color: '#1a1a1a',
-    marginBottom: 10,
-    lineHeight: 34,
+    color: '#1A1A1A',
+    lineHeight: 37,
+    letterSpacing: -0.5,
+    marginRight: 12,
+  },
+  bookmarkInline: {
+    paddingTop: 4,
+  },
+  titleRule: {
+    width: 40,
+    height: 3,
+    backgroundColor: '#DDDDDD',
+    marginBottom: 12,
+  },
+  titleRuleActive: {
+    backgroundColor: BRAND,
   },
   description: {
-    fontSize: 15,
-    color: '#4b5563',
-    lineHeight: 23,
+    fontSize: 16,
+    color: '#444444',
+    lineHeight: 25,
+    marginBottom: 16,
   },
-  statsRow: {
+  tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tag: {
+    backgroundColor: '#F5F5F2',
+    borderWidth: 1,
+    borderColor: '#DDDDDD',
+    borderRadius: 2,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+  },
+  tagText: { fontSize: 12, color: '#555555', fontWeight: '500' },
+
+  glanceBar: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingVertical: 16,
-    marginBottom: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: '#1E3612',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
   },
-  stat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 15,
+  glanceStat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  glanceLabel: {
+    fontSize: 9,
     fontWeight: '700',
-    color: '#1a1a1a',
-    marginBottom: 2,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#6b7280',
-    fontWeight: '500',
-    textTransform: 'uppercase',
+    color: '#888888',
     letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+    textAlign: 'center',
   },
-  statDivider: {
+  glanceValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    textAlign: 'center',
+  },
+  glanceDivider: {
     width: 1,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: '#2A2A2A',
     marginVertical: 4,
   },
-  metaRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 24,
-  },
-  difficultyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    gap: 5,
-  },
-  difficultyDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 3.5,
-  },
-  difficultyText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  tag: {
-    backgroundColor: '#FFF7ED',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#fed7aa',
-  },
-  tagText: {
-    fontSize: 12,
-    color: '#c2410c',
-    fontWeight: '500',
-  },
+
+  section: { marginTop: 28, paddingHorizontal: 20 },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    marginBottom: 10,
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#2D4A1E',
+    marginBottom: 0,
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#1a1a1a',
+    color: '#1A1A1A',
+    letterSpacing: -0.2,
   },
-  sectionCount: {
-    fontSize: 13,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
-    overflow: 'hidden',
-  },
+  sectionCount: { fontSize: 13, color: '#6B6B6B', fontWeight: '500' },
+
+  ingredientFirst: { borderTopWidth: 0 },
   ingredientRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    alignItems: 'flex-start',
+    paddingVertical: 13,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFED',
+    gap: 10,
   },
-  ingredientRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#f3f4f6',
-  },
-  ingredientBullet: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#F97316',
-    marginRight: 12,
-  },
-  ingredientInfo: {
-    flex: 1,
-  },
-  ingredientName: {
-    fontSize: 15,
-    color: '#1a1a1a',
-    fontWeight: '500',
-  },
-  ingredientNotes: {
-    fontSize: 12,
-    color: '#9ca3af',
-    marginTop: 1,
+  ingredientCheck: {
+    width: 8,
+    height: 8,
+    borderWidth: 1.5,
+    borderColor: '#AAAAAA',
+    borderRadius: 1,
+    marginTop: 4,
+    flexShrink: 0,
   },
   ingredientAmount: {
     fontSize: 14,
-    color: '#F97316',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  instructionsList: {
-    gap: 12,
-  },
-  instructionRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    padding: 14,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 1,
-  },
-  stepNumber: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F97316',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-    marginTop: 1,
-    flexShrink: 0,
-  },
-  stepNumberText: {
-    color: '#fff',
-    fontSize: 13,
     fontWeight: '700',
+    color: BRAND,
+    width: 88,
+    flexShrink: 0,
+    lineHeight: 21,
   },
-  stepText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#374151',
-    lineHeight: 22,
+  ingredientName: { flex: 1, fontSize: 15, color: '#1A1A1A', lineHeight: 22 },
+  ingredientNotes: { color: '#888888', fontStyle: 'italic' },
+
+  stepRow: {
+    flexDirection: 'row',
+    paddingVertical: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#EFEFED',
+    gap: 16,
   },
+  stepLeft: { alignItems: 'center', width: 28, flexShrink: 0, paddingTop: 2 },
+  stepNum: { fontSize: 14, fontWeight: '800', color: BRAND },
+  stepText: { flex: 1, fontSize: 15, color: '#333333', lineHeight: 24 },
 });

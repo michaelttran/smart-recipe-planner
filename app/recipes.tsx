@@ -15,10 +15,12 @@ import { analyzeIngredientsAndGetRecipes } from '@/lib/claude';
 import { getStore, setRecipes } from '@/lib/store';
 import { Recipe } from '@/types/recipe';
 
-const DIFFICULTY_COLORS: Record<Recipe['difficulty'], string> = {
-  easy: '#22c55e',
-  medium: '#f59e0b',
-  hard: '#ef4444',
+const BRAND = '#2D4A1E';
+
+const DIFFICULTY_LABEL: Record<Recipe['difficulty'], string> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Advanced',
 };
 
 export default function RecipesScreen() {
@@ -32,13 +34,13 @@ export default function RecipesScreen() {
       headerRight: () => (
         <Pressable
           onPress={handleRefresh}
-          style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, marginRight: 4 })}
+          style={({ pressed }) => [styles.refreshBtn, { opacity: pressed ? 0.5 : 1 }]}
           disabled={refreshing}
         >
           {refreshing ? (
-            <ActivityIndicator color="#F97316" size="small" />
+            <ActivityIndicator color={BRAND} size="small" />
           ) : (
-            <Text style={styles.refreshIcon}>↻</Text>
+            <Text style={styles.refreshBtnText}>New recipes</Text>
           )}
         </Pressable>
       ),
@@ -48,28 +50,24 @@ export default function RecipesScreen() {
   async function handleRefresh() {
     const { imageBase64, imageMediaType, allShownRecipeNames } = getStore();
     if (!imageBase64) return;
-
     setRefreshing(true);
     try {
       const newRecipes = await analyzeIngredientsAndGetRecipes(
         imageBase64,
         imageMediaType,
-        allShownRecipeNames
+        allShownRecipeNames,
+        getStore().preferences
       );
       setRecipes(newRecipes);
       setLocalRecipes(newRecipes);
     } catch (err) {
       Alert.alert(
         'Error',
-        err instanceof Error ? err.message : 'Failed to refresh recipes.'
+        err instanceof Error ? err.message : 'Failed to load new recipes.'
       );
     } finally {
       setRefreshing(false);
     }
-  }
-
-  function openRecipe(index: number) {
-    router.push(`/recipe/${index}`);
   }
 
   return (
@@ -78,87 +76,68 @@ export default function RecipesScreen() {
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
+      {/* Source context strip */}
       {store.imageUri && (
-        <View style={styles.photoRow}>
+        <View style={styles.contextStrip}>
           <Image source={{ uri: store.imageUri }} style={styles.thumbnail} />
-          <View style={styles.photoInfo}>
-            <Text style={styles.photoLabel}>Your ingredients</Text>
-            <Text style={styles.recipeCount}>
-              {recipes.length} recipe{recipes.length !== 1 ? 's' : ''} found
-            </Text>
+          <View style={styles.contextText}>
+            <Text style={styles.contextLabel}>Based on your ingredients</Text>
+            <Text style={styles.contextCount}>{recipes.length} recipes</Text>
           </View>
         </View>
       )}
 
-      <Text style={styles.sectionTitle}>What you can make</Text>
+      <View style={styles.listHeader}>
+        <Text style={styles.listTitle}>What to cook tonight</Text>
+      </View>
 
       {recipes.map((recipe, index) => (
-        <Pressable
-          key={recipe.id}
-          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-          onPress={() => openRecipe(index)}
-        >
-          <View style={styles.cardHeader}>
-            <View style={styles.cardTitleRow}>
+        <View key={recipe.id}>
+          <Pressable
+            onPress={() => router.push(`/recipe/${index}`)}
+            style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
+          >
+            {/* Recipe number badge */}
+            <Text style={styles.recipeNumber}>{String(index + 1).padStart(2, '0')}</Text>
+
+            <View style={styles.cardContent}>
               <Text style={styles.cardTitle}>{recipe.name}</Text>
-              <Text style={styles.cardArrow}>›</Text>
-            </View>
-            <View style={styles.badges}>
-              <View
-                style={[
-                  styles.difficultyBadge,
-                  { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] + '20' },
-                ]}
-              >
-                <View
-                  style={[
-                    styles.difficultyDot,
-                    { backgroundColor: DIFFICULTY_COLORS[recipe.difficulty] },
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.difficultyText,
-                    { color: DIFFICULTY_COLORS[recipe.difficulty] },
-                  ]}
-                >
-                  {recipe.difficulty.charAt(0).toUpperCase() +
-                    recipe.difficulty.slice(1)}
+              <Text style={styles.cardDescription} numberOfLines={2}>
+                {recipe.description}
+              </Text>
+
+              <View style={styles.cardMeta}>
+                <Text style={styles.metaText}>{recipe.totalTime}</Text>
+                <Text style={styles.metaDot}>·</Text>
+                <Text style={styles.metaText}>
+                  Serves {recipe.servings}
+                </Text>
+                <Text style={styles.metaDot}>·</Text>
+                <Text style={styles.metaText}>
+                  {DIFFICULTY_LABEL[recipe.difficulty]}
                 </Text>
               </View>
-              <View style={styles.timeBadge}>
-                <Text style={styles.timeBadgeText}>⏱ {recipe.totalTime}</Text>
-              </View>
-              <View style={styles.timeBadge}>
-                <Text style={styles.timeBadgeText}>
-                  🍽 {recipe.servings} serving
-                  {recipe.servings !== 1 ? 's' : ''}
-                </Text>
-              </View>
-            </View>
-          </View>
 
-          <Text style={styles.cardDescription} numberOfLines={2}>
-            {recipe.description}
-          </Text>
-
-          {recipe.tags.length > 0 && (
-            <View style={styles.tags}>
-              {recipe.tags.slice(0, 4).map((tag) => (
-                <View key={tag} style={styles.tag}>
-                  <Text style={styles.tagText}>{tag}</Text>
+              {recipe.tags.length > 0 && (
+                <View style={styles.tags}>
+                  {recipe.tags.slice(0, 3).map((tag) => (
+                    <View key={tag} style={styles.tag}>
+                      <Text style={styles.tagText}>{tag}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
+              )}
             </View>
-          )}
-        </Pressable>
+          </Pressable>
+          <View style={styles.divider} />
+        </View>
       ))}
 
-      <View style={styles.refreshHint}>
-        <Text style={styles.refreshHintText}>
-          Tap the refresh button ↻ in the top right to get 5 new recipes
+      <Pressable onPress={handleRefresh} style={styles.refreshFooter} disabled={refreshing}>
+        <Text style={styles.refreshFooterText}>
+          {refreshing ? 'Loading new recipes…' : 'Get 5 new recipes →'}
         </Text>
-      </View>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -166,126 +145,101 @@ export default function RecipesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fafaf8',
+    backgroundColor: '#F5F0E8',
   },
   content: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingBottom: 56,
   },
-  photoRow: {
+  contextStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 4,
-    elevation: 2,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+    gap: 12,
   },
   thumbnail: {
-    width: 64,
-    height: 64,
-    borderRadius: 10,
-    backgroundColor: '#e5e7eb',
+    width: 48,
+    height: 48,
+    borderRadius: 4,
+    backgroundColor: '#E5E5E5',
   },
-  photoInfo: {
-    marginLeft: 12,
+  contextText: {
+    flex: 1,
   },
-  photoLabel: {
-    fontSize: 13,
-    color: '#6b7280',
+  contextLabel: {
+    fontSize: 12,
+    color: '#6B6B6B',
     marginBottom: 2,
   },
-  recipeCount: {
-    fontSize: 17,
+  contextCount: {
+    fontSize: 15,
     fontWeight: '700',
-    color: '#1a1a1a',
+    color: '#1A1A1A',
   },
-  sectionTitle: {
+  listHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 16,
+    borderBottomWidth: 2,
+    borderBottomColor: '#2D4A1E',
+  },
+  listTitle: {
     fontSize: 22,
     fontWeight: '800',
-    color: '#1a1a1a',
-    marginBottom: 12,
+    color: '#1A1A1A',
+    letterSpacing: -0.3,
   },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cardPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.99 }],
-  },
-  cardHeader: {
-    marginBottom: 8,
-  },
-  cardTitleRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#F5F0E8',
+    gap: 14,
+  },
+  recipeNumber: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: BRAND,
+    marginTop: 3,
+    letterSpacing: 0.5,
+    width: 22,
+    flexShrink: 0,
+  },
+  cardContent: {
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    flex: 1,
-    marginRight: 8,
-  },
-  cardArrow: {
-    fontSize: 22,
-    color: '#F97316',
-    fontWeight: '300',
-    marginTop: -2,
-  },
-  badges: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  difficultyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-    gap: 4,
-  },
-  difficultyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  difficultyText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  timeBadge: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  timeBadgeText: {
-    fontSize: 12,
-    color: '#374151',
-    fontWeight: '500',
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    lineHeight: 25,
+    letterSpacing: -0.2,
+    marginBottom: 6,
   },
   cardDescription: {
     fontSize: 14,
-    color: '#4b5563',
-    lineHeight: 20,
+    color: '#6B6B6B',
+    lineHeight: 21,
     marginBottom: 10,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginBottom: 10,
+  },
+  metaText: {
+    fontSize: 13,
+    color: '#1A1A1A',
+    fontWeight: '600',
+  },
+  metaDot: {
+    fontSize: 13,
+    color: '#AAAAAA',
   },
   tags: {
     flexDirection: 'row',
@@ -293,30 +247,43 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   tag: {
-    backgroundColor: '#FFF7ED',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#DDDDDD',
+    borderRadius: 2,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#fed7aa',
   },
   tagText: {
     fontSize: 11,
-    color: '#c2410c',
+    color: '#6B6B6B',
     fontWeight: '500',
   },
-  refreshHint: {
-    marginTop: 8,
+  divider: {
+    height: 1,
+    backgroundColor: '#E5E5E5',
+    marginLeft: 20,
+  },
+  refreshBtn: {
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+  },
+  refreshBtnText: {
+    fontSize: 14,
+    color: BRAND,
+    fontWeight: '600',
+  },
+  refreshFooter: {
     alignItems: 'center',
+    paddingVertical: 28,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5E5',
+    marginTop: 8,
   },
-  refreshHintText: {
-    fontSize: 13,
-    color: '#9ca3af',
-    textAlign: 'center',
-  },
-  refreshIcon: {
-    fontSize: 24,
-    color: '#F97316',
-    fontWeight: '400',
+  refreshFooterText: {
+    fontSize: 14,
+    color: BRAND,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 });

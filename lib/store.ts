@@ -1,4 +1,8 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Recipe } from '@/types/recipe';
+import { UserPreferences, DEFAULT_PREFERENCES } from '@/types/preferences';
+
+const FAVORITES_KEY = '@dishdrop/favorites';
 
 interface AppStore {
   imageBase64: string | null;
@@ -6,6 +10,8 @@ interface AppStore {
   imageMediaType: 'image/jpeg' | 'image/png' | 'image/webp';
   recipes: Recipe[];
   allShownRecipeNames: string[];
+  preferences: UserPreferences;
+  favorites: Recipe[];
 }
 
 const store: AppStore = {
@@ -14,7 +20,20 @@ const store: AppStore = {
   imageMediaType: 'image/jpeg',
   recipes: [],
   allShownRecipeNames: [],
+  preferences: { ...DEFAULT_PREFERENCES },
+  favorites: [],
 };
+
+// Load persisted favorites on startup
+AsyncStorage.getItem(FAVORITES_KEY)
+  .then((json) => {
+    if (json) store.favorites = JSON.parse(json);
+  })
+  .catch(() => {});
+
+function persistFavorites() {
+  AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(store.favorites)).catch(() => {});
+}
 
 export function setImage(
   base64: string,
@@ -26,6 +45,11 @@ export function setImage(
   store.imageMediaType = mediaType;
   store.recipes = [];
   store.allShownRecipeNames = [];
+  store.preferences = { ...DEFAULT_PREFERENCES };
+}
+
+export function setPreferences(prefs: UserPreferences) {
+  store.preferences = prefs;
 }
 
 export function setRecipes(recipes: Recipe[]) {
@@ -34,6 +58,20 @@ export function setRecipes(recipes: Recipe[]) {
     ...store.allShownRecipeNames,
     ...recipes.map((r) => r.name),
   ];
+}
+
+export function toggleFavorite(recipe: Recipe) {
+  const idx = store.favorites.findIndex((r) => r.id === recipe.id);
+  if (idx >= 0) {
+    store.favorites = store.favorites.filter((r) => r.id !== recipe.id);
+  } else {
+    store.favorites = [recipe, ...store.favorites];
+  }
+  persistFavorites();
+}
+
+export function isFavorite(recipeId: string): boolean {
+  return store.favorites.some((r) => r.id === recipeId);
 }
 
 export function getStore() {
