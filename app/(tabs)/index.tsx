@@ -11,7 +11,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { router } from 'expo-router';
-import { setImage } from '@/lib/store';
+import { setImage, getStore } from '@/lib/store';
 
 const BRAND = '#2D4A1E';
 
@@ -22,7 +22,12 @@ type PickedImage = {
 };
 
 export default function HomeScreen() {
-  const [pickedImage, setPickedImage] = useState<PickedImage | null>(null);
+  const store = getStore();
+  const [pickedImage, setPickedImage] = useState<PickedImage | null>(
+    store.imageUri && store.imageBase64
+      ? { uri: store.imageUri, base64: store.imageBase64, mediaType: store.imageMediaType }
+      : null
+  );
   const [reading, setReading] = useState(false);
 
   async function pickImage(useCamera: boolean) {
@@ -62,10 +67,10 @@ export default function HomeScreen() {
     }
   }
 
-  function goToPreferences() {
+  function goToIngredients() {
     if (!pickedImage) return;
     setImage(pickedImage.base64, pickedImage.uri, pickedImage.mediaType);
-    router.push('/preferences');
+    router.push('/ingredients');
   }
 
   return (
@@ -90,7 +95,7 @@ export default function HomeScreen() {
       {pickedImage ? (
         <View style={styles.previewContainer}>
           <Image source={{ uri: pickedImage.uri }} style={styles.preview} />
-          <Pressable style={styles.changeButton} onPress={() => setPickedImage(null)}>
+          <Pressable style={styles.changeButton} onPress={() => { setPickedImage(null); setImage('', '', 'image/jpeg'); }}>
             <Text style={styles.changeButtonText}>Change photo</Text>
           </Pressable>
         </View>
@@ -116,7 +121,7 @@ export default function HomeScreen() {
           </Pressable>
         )}
         {pickedImage && (
-          <Pressable style={styles.btnPrimary} onPress={goToPreferences}>
+          <Pressable style={styles.btnPrimary} onPress={goToIngredients}>
             <Text style={styles.btnPrimaryText}>Continue</Text>
           </Pressable>
         )}

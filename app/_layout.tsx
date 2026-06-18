@@ -22,8 +22,12 @@ export default function RootLayout() {
       >
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
+          name="ingredients"
+          options={{ title: 'Ingredients', headerBackTitle: 'Photo' }}
+        />
+        <Stack.Screen
           name="preferences"
-          options={{ title: 'Customize', headerBackTitle: 'Photo' }}
+          options={{ title: 'Customize', headerBackTitle: 'Ingredients' }}
         />
         <Stack.Screen
           name="recipes"

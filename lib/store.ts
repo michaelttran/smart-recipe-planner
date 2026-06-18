@@ -8,6 +8,7 @@ interface AppStore {
   imageBase64: string | null;
   imageUri: string | null;
   imageMediaType: 'image/jpeg' | 'image/png' | 'image/webp';
+  ingredients: string[];
   recipes: Recipe[];
   allShownRecipeNames: string[];
   preferences: UserPreferences;
@@ -18,6 +19,7 @@ const store: AppStore = {
   imageBase64: null,
   imageUri: null,
   imageMediaType: 'image/jpeg',
+  ingredients: [],
   recipes: [],
   allShownRecipeNames: [],
   preferences: { ...DEFAULT_PREFERENCES },
@@ -43,9 +45,14 @@ export function setImage(
   store.imageBase64 = base64;
   store.imageUri = uri;
   store.imageMediaType = mediaType;
+  store.ingredients = [];
   store.recipes = [];
   store.allShownRecipeNames = [];
   store.preferences = { ...DEFAULT_PREFERENCES };
+}
+
+export function setIngredients(ingredients: string[]) {
+  store.ingredients = ingredients;
 }
 
 export function setPreferences(prefs: UserPreferences) {
@@ -53,7 +60,8 @@ export function setPreferences(prefs: UserPreferences) {
 }
 
 export function setRecipes(recipes: Recipe[]) {
-  store.recipes = recipes;
+  const ts = Date.now();
+  store.recipes = recipes.map((r, i) => ({ ...r, id: `${ts}-${i}` }));
   store.allShownRecipeNames = [
     ...store.allShownRecipeNames,
     ...recipes.map((r) => r.name),

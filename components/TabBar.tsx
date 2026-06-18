@@ -13,7 +13,7 @@ export default function TabBar() {
   const discoverActive = !savedActive;
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingBottom: Math.max(insets.bottom, 8) }]}>
       <Pressable style={styles.tab} onPress={() => router.navigate('/')}>
         <Ionicons
           name={discoverActive ? 'camera' : 'camera-outline'}
@@ -40,13 +40,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#E5E5E5',
-    height: 60,
+    paddingTop: 10,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     gap: 3,
+    paddingBottom: 2,
   },
   label: {
     fontSize: 11,

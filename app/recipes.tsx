@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { router, useNavigation } from 'expo-router';
 import { useLayoutEffect } from 'react';
-import { analyzeIngredientsAndGetRecipes } from '@/lib/claude';
+import { fetchRecipes } from '@/lib/api-client';
 import { getStore, setRecipes } from '@/lib/store';
 import { Recipe } from '@/types/recipe';
 
@@ -48,13 +48,12 @@ export default function RecipesScreen() {
   }, [refreshing]);
 
   async function handleRefresh() {
-    const { imageBase64, imageMediaType, allShownRecipeNames } = getStore();
+    const { imageBase64, allShownRecipeNames } = getStore();
     if (!imageBase64) return;
     setRefreshing(true);
     try {
-      const newRecipes = await analyzeIngredientsAndGetRecipes(
-        imageBase64,
-        imageMediaType,
+      const newRecipes = await fetchRecipes(
+        getStore().ingredients,
         allShownRecipeNames,
         getStore().preferences
       );

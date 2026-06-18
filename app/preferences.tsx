@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { analyzeIngredientsAndGetRecipes } from '@/lib/claude';
+import { fetchRecipes } from '@/lib/api-client';
 import { getStore, setPreferences, setRecipes } from '@/lib/store';
 import { UserPreferences, DEFAULT_PREFERENCES } from '@/types/preferences';
 
@@ -76,9 +76,8 @@ export default function PreferencesScreen() {
     setPreferences(prefs);
 
     try {
-      const recipes = await analyzeIngredientsAndGetRecipes(
-        store.imageBase64,
-        store.imageMediaType,
+      const recipes = await fetchRecipes(
+        store.ingredients,
         store.allShownRecipeNames,
         prefs
       );
