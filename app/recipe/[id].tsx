@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useLayoutEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, Share, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getStore, isFavorite, addToFavorites, removeFromFavorites } from '@/lib/store';
 import { addFavorite, removeFavorite } from '@/lib/api-client';
@@ -158,6 +158,23 @@ export default function RecipeDetailScreen() {
           </View>
         ))}
       </View>
+
+      {/* Shop ingredients */}
+      <Pressable
+        style={({ pressed }) => [styles.shopBtn, pressed && { opacity: 0.75 }]}
+        onPress={() => {
+          const lines = recipe.ingredients.map(
+            (ing) => `• ${ing.amount} ${ing.unit} ${ing.name}${ing.notes ? ` (${ing.notes})` : ''}`.trim()
+          );
+          Share.share({
+            message: `Ingredients for ${recipe.name} (serves ${recipe.servings})\n\n${lines.join('\n')}`,
+            title: `${recipe.name} — Shopping List`,
+          });
+        }}
+      >
+        <Ionicons name="cart-outline" size={18} color={BRAND} />
+        <Text style={styles.shopBtnText}>Shop ingredients</Text>
+      </Pressable>
 
       {/* Instructions */}
       <View style={styles.section}>
@@ -376,4 +393,23 @@ const styles = StyleSheet.create({
   stepLeft: { alignItems: 'center', width: 28, flexShrink: 0, paddingTop: 2 },
   stepNum: { fontSize: 14, fontWeight: '800', color: BRAND },
   stepText: { flex: 1, fontSize: 15, color: '#333333', lineHeight: 24 },
+
+  shopBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginHorizontal: 20,
+    marginTop: 16,
+    paddingVertical: 14,
+    borderWidth: 1.5,
+    borderColor: BRAND,
+    borderRadius: 4,
+  },
+  shopBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: BRAND,
+    letterSpacing: 0.2,
+  },
 });

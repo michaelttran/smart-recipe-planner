@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 import { UserPreferences } from '@/types/preferences';
 import { Recipe, RecipeListResponse } from '@/types/recipe';
+import { requireUser, checkUsage, incrementUsage, errorResponse } from '@/lib/api-helpers';
 
 // ── Claude config ────────────────────────────────────────────────────────────
 
@@ -188,6 +189,8 @@ function buildCacheKey(ingredients: string[], preferences: UserPreferences): str
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireUser(request);
+
     const { ingredients, preferences, excludeRecipeNames } = await request.json() as {
       ingredients: string[];
       preferences: UserPreferences;
@@ -207,6 +210,7 @@ export async function POST(request: Request) {
         .single();
 
       if (cached) {
+        // Cache hit — no Claude call, doesn't count against rate limit
         supabase
           .from('recipe_cache')
           .update({ hit_count: cached.hit_count + 1 })
@@ -215,7 +219,9 @@ export async function POST(request: Request) {
         return Response.json(cached.recipes);
       }
 
+      await checkUsage(userId, 'recipe_calls');
       const recipes = await callClaude(ingredients, preferences, excludeRecipeNames ?? []);
+      incrementUsage(userId, 'recipe_calls');
 
       supabase
         .from('recipe_cache')
@@ -225,10 +231,11 @@ export async function POST(request: Request) {
       return Response.json(recipes);
     }
 
+    await checkUsage(userId, 'recipe_calls');
     const recipes = await callClaude(ingredients, preferences, excludeRecipeNames ?? []);
+    incrementUsage(userId, 'recipe_calls');
     return Response.json(recipes);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return Response.json({ error: message }, { status: 500 });
+    return errorResponse(err);
   }
 }

@@ -1,3 +1,5 @@
+import { requireUser, checkUsage, incrementUsage, errorResponse } from '@/lib/api-helpers';
+
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
 const SCHEMA = {
@@ -26,6 +28,9 @@ Rules:
 
 export async function POST(request: Request) {
   try {
+    const userId = await requireUser(request);
+    await checkUsage(userId, 'ingredient_calls');
+
     const { imageBase64, imageMediaType } = await request.json();
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -76,9 +81,12 @@ export async function POST(request: Request) {
     if (!textBlock?.text) throw new Error('No response from Claude');
 
     const result = JSON.parse(textBlock.text);
+
+    // Only count against the limit after a successful Claude call
+    incrementUsage(userId, 'ingredient_calls');
+
     return Response.json(result.ingredients as string[]);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
-    return Response.json({ error: message }, { status: 500 });
+    return errorResponse(err);
   }
 }

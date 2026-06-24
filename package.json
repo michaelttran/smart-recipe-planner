@@ -6,7 +6,18 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "node_modules/.bin/jest",
+    "test:watch": "node_modules/.bin/jest --watch"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1"
+    },
+    "transformIgnorePatterns": [
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|react-navigation|@react-navigation/.*|@supabase/.*)"
+    ]
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "1.23.1",
@@ -23,6 +34,7 @@
     "expo-splash-screen": "~0.29.21",
     "expo-status-bar": "~2.0.1",
     "expo-system-ui": "~4.0.8",
+    "jest-expo": "~52.0.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.9",
@@ -34,7 +46,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "^30.0.0",
     "@types/react": "~18.3.12",
+    "jest": "^29.7.0",
     "typescript": "^5.3.3"
   },
   "private": true
