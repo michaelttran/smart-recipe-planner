@@ -106,6 +106,21 @@ export default function RecipeDetailScreen() {
         )}
       </View>
 
+      {/* Macros bar */}
+      {recipe.macros && (
+        <View style={styles.macrosBar}>
+          <MacroStat label="Calories" value={String(recipe.macros.calories)} unit="" />
+          <View style={styles.macroDivider} />
+          <MacroStat label="Protein" value={String(recipe.macros.proteinG)} unit="g" />
+          <View style={styles.macroDivider} />
+          <MacroStat label="Carbs" value={String(recipe.macros.carbsG)} unit="g" />
+          <View style={styles.macroDivider} />
+          <MacroStat label="Fat" value={String(recipe.macros.fatG)} unit="g" />
+          <View style={styles.macroDivider} />
+          <MacroStat label="Fiber" value={String(recipe.macros.fiberG)} unit="g" />
+        </View>
+      )}
+
       {/* At-a-glance bar */}
       <View style={styles.glanceBar}>
         <GlanceStat label="Prep time" value={recipe.prepTime} />
@@ -160,6 +175,15 @@ export default function RecipeDetailScreen() {
         ))}
       </View>
     </ScrollView>
+  );
+}
+
+function MacroStat({ label, value, unit }: { label: string; value: string; unit: string }) {
+  return (
+    <View style={styles.macroStat}>
+      <Text style={styles.macroValue}>{value}<Text style={styles.macroUnit}>{unit}</Text></Text>
+      <Text style={styles.macroLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -234,6 +258,39 @@ const styles = StyleSheet.create({
   },
   tagText: { fontSize: 12, color: '#555555', fontWeight: '500' },
 
+  macrosBar: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 14,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5E5',
+  },
+  macroStat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  macroValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1A1A1A',
+    marginBottom: 3,
+  },
+  macroUnit: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B6B6B',
+  },
+  macroLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#AAAAAA',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  macroDivider: {
+    width: 1,
+    backgroundColor: '#E5E5E5',
+    marginVertical: 4,
+  },
   glanceBar: {
     flexDirection: 'row',
     backgroundColor: '#1E3612',

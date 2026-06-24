@@ -53,10 +53,22 @@ const RECIPE_JSON_SCHEMA = {
           },
           instructions: { type: 'array', items: { type: 'string' } },
           tags: { type: 'array', items: { type: 'string' } },
+          macros: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              calories: { type: 'integer' },
+              proteinG: { type: 'number' },
+              carbsG: { type: 'number' },
+              fatG: { type: 'number' },
+              fiberG: { type: 'number' },
+            },
+            required: ['calories', 'proteinG', 'carbsG', 'fatG', 'fiberG'],
+          },
         },
         required: [
           'id', 'name', 'description', 'prepTime', 'cookTime', 'totalTime',
-          'servings', 'difficulty', 'ingredients', 'instructions', 'tags',
+          'servings', 'difficulty', 'ingredients', 'instructions', 'tags', 'macros',
         ],
       },
     },

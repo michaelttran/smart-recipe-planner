@@ -5,6 +5,14 @@ export interface Ingredient {
   notes?: string;
 }
 
+export interface Macros {
+  calories: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  fiberG: number;
+}
+
 export interface Recipe {
   id: string;
   name: string;
@@ -17,6 +25,7 @@ export interface Recipe {
   ingredients: Ingredient[];
   instructions: string[];
   tags: string[];
+  macros: Macros;
 }
 
 export interface RecipeListResponse {
