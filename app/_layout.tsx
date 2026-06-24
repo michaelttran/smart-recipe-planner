@@ -1,9 +1,25 @@
-import { Stack } from 'expo-router';
+import { useEffect } from 'react';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import TabBar from '@/components/TabBar';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 
-export default function RootLayout() {
+function RootLayoutNav() {
+  const { session, loading } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading) return;
+    const inAuthGroup = segments[0] === '(auth)';
+    if (!session && !inAuthGroup) {
+      router.replace('/(auth)/sign-in');
+    } else if (session && inAuthGroup) {
+      router.replace('/');
+    }
+  }, [session, loading, segments]);
+
   return (
     <View style={{ flex: 1 }}>
       <StatusBar style="dark" />
@@ -20,6 +36,7 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: '#F5F0E8' },
         }}
       >
+        <Stack.Screen name="(auth)" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen
           name="ingredients"
@@ -38,7 +55,15 @@ export default function RootLayout() {
           options={{ title: '', headerBackTitle: 'Recipes' }}
         />
       </Stack>
-      <TabBar />
+      {session && <TabBar />}
     </View>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <RootLayoutNav />
+    </AuthProvider>
   );
 }

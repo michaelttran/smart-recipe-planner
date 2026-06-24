@@ -46,7 +46,8 @@
           "cameraPermission": "The app accesses your camera to let you photograph ingredients."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

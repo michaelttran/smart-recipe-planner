@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useNavigation } from 'expo-router';
 import { useLayoutEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getStore, toggleFavorite, isFavorite } from '@/lib/store';
+import { getStore, isFavorite, addToFavorites, removeFromFavorites } from '@/lib/store';
+import { addFavorite, removeFavorite } from '@/lib/api-client';
 import { Recipe } from '@/types/recipe';
 
 const BRAND = '#2D4A1E';
@@ -23,15 +24,16 @@ export default function RecipeDetailScreen() {
     : store.recipes[Number(id)];
 
   const [favorited, setFavorited] = useState(
-    recipe ? isFavorite(recipe.id) : false
+    recipe ? isFavorite(recipe.name) : false
   );
+  const [toggling, setToggling] = useState(false);
 
   useLayoutEffect(() => {
     if (!recipe) return;
     navigation.setOptions({
       title: '',
       headerRight: () => (
-        <Pressable onPress={handleToggleFavorite} hitSlop={12} style={{ marginRight: 4 }}>
+        <Pressable onPress={handleToggleFavorite} hitSlop={12} style={{ marginRight: 4 }} disabled={toggling}>
           <Ionicons
             name={favorited ? 'bookmark' : 'bookmark-outline'}
             size={22}
@@ -40,12 +42,28 @@ export default function RecipeDetailScreen() {
         </Pressable>
       ),
     });
-  }, [recipe?.name, favorited]);
+  }, [recipe?.name, favorited, toggling]);
 
-  function handleToggleFavorite() {
-    if (!recipe) return;
-    toggleFavorite(recipe);
-    setFavorited(isFavorite(recipe.id));
+  async function handleToggleFavorite() {
+    if (!recipe || toggling) return;
+    setToggling(true);
+    try {
+      if (favorited) {
+        removeFromFavorites(recipe.name);
+        setFavorited(false);
+        await removeFavorite(recipe.name);
+      } else {
+        const { id: supabaseId } = await addFavorite(recipe);
+        addToFavorites(recipe, supabaseId);
+        setFavorited(true);
+      }
+    } catch (err) {
+      // Revert optimistic update on failure
+      setFavorited(favorited);
+      Alert.alert('Error', err instanceof Error ? err.message : 'Could not update saved recipes.');
+    } finally {
+      setToggling(false);
+    }
   }
 
   if (!recipe) {
@@ -66,7 +84,7 @@ export default function RecipeDetailScreen() {
       <View style={styles.titleSection}>
         <View style={styles.titleRow}>
           <Text style={styles.recipeName}>{recipe.name}</Text>
-          <Pressable onPress={handleToggleFavorite} hitSlop={12} style={styles.bookmarkInline}>
+          <Pressable onPress={handleToggleFavorite} hitSlop={12} style={styles.bookmarkInline} disabled={toggling}>
             <Ionicons
               name={favorited ? 'bookmark' : 'bookmark-outline'}
               size={26}

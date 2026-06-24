@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,7 +10,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import { getStore, toggleFavorite } from '@/lib/store';
+import { getStore, setFavorites, removeFromFavorites } from '@/lib/store';
+import { getFavorites, removeFavorite } from '@/lib/api-client';
 import { Recipe } from '@/types/recipe';
 
 const BRAND = '#2D4A1E';
@@ -22,18 +24,26 @@ const DIFFICULTY_LABEL: Record<Recipe['difficulty'], string> = {
 
 export default function SavedScreen() {
   const insets = useSafeAreaInsets();
-  const [favorites, setFavorites] = useState<Recipe[]>(getStore().favorites);
+  const [favorites, setLocal] = useState<Recipe[]>(getStore().favorites);
+  const [loading, setLoading] = useState(false);
 
-  // Refresh whenever this tab comes into focus
   useFocusEffect(
     useCallback(() => {
-      setFavorites([...getStore().favorites]);
+      setLoading(true);
+      getFavorites()
+        .then((data) => {
+          setFavorites(data);
+          setLocal([...getStore().favorites]);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
     }, [])
   );
 
-  function handleRemove(recipe: Recipe) {
-    toggleFavorite(recipe);
-    setFavorites([...getStore().favorites]);
+  async function handleRemove(recipe: Recipe) {
+    removeFromFavorites(recipe.name);
+    setLocal([...getStore().favorites]);
+    await removeFavorite(recipe.name);
   }
 
   const header = (
@@ -46,6 +56,17 @@ export default function SavedScreen() {
       </View>
     </View>
   );
+
+  if (loading && favorites.length === 0) {
+    return (
+      <View style={[styles.emptyContainer, { paddingTop: insets.top }]}>
+        {header}
+        <View style={styles.emptyContent}>
+          <ActivityIndicator size="large" color={BRAND} />
+        </View>
+      </View>
+    );
+  }
 
   if (favorites.length === 0) {
     return (
@@ -70,36 +91,36 @@ export default function SavedScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-      {favorites.map((recipe) => (
-        <View key={recipe.id}>
-          <Pressable
-            style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
-            onPress={() => router.push(`/recipe/fav-${recipe.id}`)}
-          >
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{recipe.name}</Text>
-              <Text style={styles.cardDescription} numberOfLines={2}>
-                {recipe.description}
-              </Text>
-              <View style={styles.cardMeta}>
-                <Text style={styles.metaText}>{recipe.totalTime}</Text>
-                <Text style={styles.metaDot}>·</Text>
-                <Text style={styles.metaText}>Serves {recipe.servings}</Text>
-                <Text style={styles.metaDot}>·</Text>
-                <Text style={styles.metaText}>{DIFFICULTY_LABEL[recipe.difficulty]}</Text>
-              </View>
-            </View>
+        {favorites.map((recipe) => (
+          <View key={recipe.id}>
             <Pressable
-              style={styles.removeBtn}
-              onPress={() => handleRemove(recipe)}
-              hitSlop={12}
+              style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
+              onPress={() => router.push(`/recipe/fav-${recipe.id}`)}
             >
-              <Ionicons name="bookmark" size={22} color={BRAND} />
+              <View style={styles.cardContent}>
+                <Text style={styles.cardTitle}>{recipe.name}</Text>
+                <Text style={styles.cardDescription} numberOfLines={2}>
+                  {recipe.description}
+                </Text>
+                <View style={styles.cardMeta}>
+                  <Text style={styles.metaText}>{recipe.totalTime}</Text>
+                  <Text style={styles.metaDot}>·</Text>
+                  <Text style={styles.metaText}>Serves {recipe.servings}</Text>
+                  <Text style={styles.metaDot}>·</Text>
+                  <Text style={styles.metaText}>{DIFFICULTY_LABEL[recipe.difficulty]}</Text>
+                </View>
+              </View>
+              <Pressable
+                style={styles.removeBtn}
+                onPress={() => handleRemove(recipe)}
+                hitSlop={12}
+              >
+                <Ionicons name="bookmark" size={22} color={BRAND} />
+              </Pressable>
             </Pressable>
-          </Pressable>
-          <View style={styles.divider} />
-        </View>
-      ))}
+            <View style={styles.divider} />
+          </View>
+        ))}
       </ScrollView>
     </View>
   );

@@ -1,8 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Recipe } from '@/types/recipe';
 import { UserPreferences, DEFAULT_PREFERENCES } from '@/types/preferences';
-
-const FAVORITES_KEY = '@dishdrop/favorites';
 
 interface AppStore {
   imageBase64: string | null;
@@ -10,6 +7,7 @@ interface AppStore {
   imageMediaType: 'image/jpeg' | 'image/png' | 'image/webp';
   ingredients: string[];
   recipes: Recipe[];
+  recipeBatchSizes: number[];
   allShownRecipeNames: string[];
   preferences: UserPreferences;
   favorites: Recipe[];
@@ -21,21 +19,11 @@ const store: AppStore = {
   imageMediaType: 'image/jpeg',
   ingredients: [],
   recipes: [],
+  recipeBatchSizes: [],
   allShownRecipeNames: [],
   preferences: { ...DEFAULT_PREFERENCES },
   favorites: [],
 };
-
-// Load persisted favorites on startup
-AsyncStorage.getItem(FAVORITES_KEY)
-  .then((json) => {
-    if (json) store.favorites = JSON.parse(json);
-  })
-  .catch(() => {});
-
-function persistFavorites() {
-  AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(store.favorites)).catch(() => {});
-}
 
 export function setImage(
   base64: string,
@@ -47,6 +35,7 @@ export function setImage(
   store.imageMediaType = mediaType;
   store.ingredients = [];
   store.recipes = [];
+  store.recipeBatchSizes = [];
   store.allShownRecipeNames = [];
   store.preferences = { ...DEFAULT_PREFERENCES };
 }
@@ -62,24 +51,41 @@ export function setPreferences(prefs: UserPreferences) {
 export function setRecipes(recipes: Recipe[]) {
   const ts = Date.now();
   store.recipes = recipes.map((r, i) => ({ ...r, id: `${ts}-${i}` }));
+  store.recipeBatchSizes = [recipes.length];
   store.allShownRecipeNames = [
     ...store.allShownRecipeNames,
     ...recipes.map((r) => r.name),
   ];
 }
 
-export function toggleFavorite(recipe: Recipe) {
-  const idx = store.favorites.findIndex((r) => r.id === recipe.id);
-  if (idx >= 0) {
-    store.favorites = store.favorites.filter((r) => r.id !== recipe.id);
-  } else {
-    store.favorites = [recipe, ...store.favorites];
-  }
-  persistFavorites();
+export function appendRecipes(recipes: Recipe[]) {
+  const ts = Date.now();
+  const offset = store.recipes.length;
+  const withIds = recipes.map((r, i) => ({ ...r, id: `${ts}-${offset + i}` }));
+  store.recipes = [...store.recipes, ...withIds];
+  store.recipeBatchSizes = [...store.recipeBatchSizes, recipes.length];
+  store.allShownRecipeNames = [
+    ...store.allShownRecipeNames,
+    ...recipes.map((r) => r.name),
+  ];
 }
 
-export function isFavorite(recipeId: string): boolean {
-  return store.favorites.some((r) => r.id === recipeId);
+// Replaces the full favorites list (e.g. after fetching from Supabase).
+// Each recipe's id is set to its Supabase row UUID so the detail screen can look it up.
+export function setFavorites(items: { id: string; recipe: Recipe }[]) {
+  store.favorites = items.map(({ id, recipe }) => ({ ...recipe, id }));
+}
+
+export function addToFavorites(recipe: Recipe, supabaseId: string) {
+  store.favorites = [{ ...recipe, id: supabaseId }, ...store.favorites];
+}
+
+export function removeFromFavorites(recipeName: string) {
+  store.favorites = store.favorites.filter((r) => r.name !== recipeName);
+}
+
+export function isFavorite(recipeName: string): boolean {
+  return store.favorites.some((r) => r.name === recipeName);
 }
 
 export function getStore() {

@@ -12,7 +12,7 @@ import {
 import { router, useNavigation } from 'expo-router';
 import { useLayoutEffect } from 'react';
 import { fetchRecipes } from '@/lib/api-client';
-import { getStore, setRecipes } from '@/lib/store';
+import { getStore, appendRecipes } from '@/lib/store';
 import { Recipe } from '@/types/recipe';
 
 const BRAND = '#2D4A1E';
@@ -22,6 +22,16 @@ const DIFFICULTY_LABEL: Record<Recipe['difficulty'], string> = {
   medium: 'Medium',
   hard: 'Advanced',
 };
+
+function getBatches(recipes: Recipe[], batchSizes: number[]): Recipe[][] {
+  const batches: Recipe[][] = [];
+  let offset = 0;
+  for (const size of batchSizes) {
+    batches.push(recipes.slice(offset, offset + size));
+    offset += size;
+  }
+  return batches;
+}
 
 export default function RecipesScreen() {
   const store = getStore();
@@ -57,8 +67,8 @@ export default function RecipesScreen() {
         allShownRecipeNames,
         getStore().preferences
       );
-      setRecipes(newRecipes);
-      setLocalRecipes(newRecipes);
+      appendRecipes(newRecipes);
+      setLocalRecipes([...getStore().recipes]);
     } catch (err) {
       Alert.alert(
         'Error',
@@ -90,47 +100,59 @@ export default function RecipesScreen() {
         <Text style={styles.listTitle}>What to cook tonight</Text>
       </View>
 
-      {recipes.map((recipe, index) => (
-        <View key={recipe.id}>
-          <Pressable
-            onPress={() => router.push(`/recipe/${index}`)}
-            style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
-          >
-            {/* Recipe number badge */}
-            <Text style={styles.recipeNumber}>{String(index + 1).padStart(2, '0')}</Text>
-
-            <View style={styles.cardContent}>
-              <Text style={styles.cardTitle}>{recipe.name}</Text>
-              <Text style={styles.cardDescription} numberOfLines={2}>
-                {recipe.description}
-              </Text>
-
-              <View style={styles.cardMeta}>
-                <Text style={styles.metaText}>{recipe.totalTime}</Text>
-                <Text style={styles.metaDot}>·</Text>
-                <Text style={styles.metaText}>
-                  Serves {recipe.servings}
-                </Text>
-                <Text style={styles.metaDot}>·</Text>
-                <Text style={styles.metaText}>
-                  {DIFFICULTY_LABEL[recipe.difficulty]}
-                </Text>
+      {getBatches(recipes, getStore().recipeBatchSizes).map((batch, batchIdx) => {
+        const globalOffset = recipes.indexOf(batch[0]);
+        return (
+          <View key={batchIdx}>
+            {batchIdx > 0 && (
+              <View style={styles.batchDivider}>
+                <View style={styles.batchDividerLine} />
+                <Text style={styles.batchDividerText}>More recipes</Text>
+                <View style={styles.batchDividerLine} />
               </View>
+            )}
+            {batch.map((recipe, localIdx) => {
+              const globalIdx = globalOffset + localIdx;
+              return (
+                <View key={recipe.id}>
+                  <Pressable
+                    onPress={() => router.push(`/recipe/${globalIdx}`)}
+                    style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
+                  >
+                    <Text style={styles.recipeNumber}>{String(localIdx + 1).padStart(2, '0')}</Text>
 
-              {recipe.tags.length > 0 && (
-                <View style={styles.tags}>
-                  {recipe.tags.slice(0, 3).map((tag) => (
-                    <View key={tag} style={styles.tag}>
-                      <Text style={styles.tagText}>{tag}</Text>
+                    <View style={styles.cardContent}>
+                      <Text style={styles.cardTitle}>{recipe.name}</Text>
+                      <Text style={styles.cardDescription} numberOfLines={2}>
+                        {recipe.description}
+                      </Text>
+
+                      <View style={styles.cardMeta}>
+                        <Text style={styles.metaText}>{recipe.totalTime}</Text>
+                        <Text style={styles.metaDot}>·</Text>
+                        <Text style={styles.metaText}>Serves {recipe.servings}</Text>
+                        <Text style={styles.metaDot}>·</Text>
+                        <Text style={styles.metaText}>{DIFFICULTY_LABEL[recipe.difficulty]}</Text>
+                      </View>
+
+                      {recipe.tags.length > 0 && (
+                        <View style={styles.tags}>
+                          {recipe.tags.slice(0, 3).map((tag) => (
+                            <View key={tag} style={styles.tag}>
+                              <Text style={styles.tagText}>{tag}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
-                  ))}
+                  </Pressable>
+                  <View style={styles.divider} />
                 </View>
-              )}
-            </View>
-          </Pressable>
-          <View style={styles.divider} />
-        </View>
-      ))}
+              );
+            })}
+          </View>
+        );
+      })}
 
       <Pressable onPress={handleRefresh} style={styles.refreshFooter} disabled={refreshing}>
         <Text style={styles.refreshFooterText}>
@@ -284,5 +306,24 @@ const styles = StyleSheet.create({
     color: BRAND,
     fontWeight: '700',
     letterSpacing: 0.2,
+  },
+  batchDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    gap: 12,
+  },
+  batchDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#DDDDDD',
+  },
+  batchDividerText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#AAAAAA',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
   },
 });
