@@ -34,50 +34,69 @@ mise (a nod to *mise en place*) lets you photograph whatever ingredients you hav
 | Secure storage | `expo-secure-store` (auth token persistence) |
 | Icons | `@expo/vector-icons` (Ionicons) |
 
-## Prerequisites
+## Running the app
+
+### What you need
 
 - Node.js 18+
-- An [Anthropic API key](https://console.anthropic.com/)
-- A [Supabase](https://supabase.com/) project (free tier works)
-- For device testing: **Expo Go** (download from the App Store — use the SDK 54 version)
-- For iOS simulator: Xcode 15+
+- The `.env` file (sent separately — contains all API keys and database credentials; do not commit this file)
+- **Expo Go** installed on your phone ([iOS App Store](https://apps.apple.com/app/expo-go/id982107779) · [Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)) — make sure it's version **SDK 54**
 
-## Setup
-
-### 1. Install dependencies
+### Steps
 
 ```bash
+# 1. Install dependencies
 npm install
+
+# 2. Place the .env file in the repo root (same folder as package.json)
+#    It should already contain all keys — no edits needed.
+
+# 3. Start the bundler
+npx expo start
 ```
 
-### 2. Configure environment variables
+A QR code will appear in the terminal. **Open Expo Go on your phone and scan it.** Your phone and computer must be on the same Wi-Fi network.
+
+> **If scanning fails or you get "Network request failed":** run `npx expo start --tunnel` instead. This routes traffic through a relay so Wi-Fi network differences don't matter.
+
+That's it — no Supabase account, no database setup, no API key registration needed. Everything is pre-configured.
+
+---
+
+### iOS simulator (alternative)
+
+If you have Xcode installed:
 
 ```bash
-cp .env.example .env
+npx expo run:ios
 ```
 
-Open `.env` and fill in all six values:
+---
+
+### Developer setup (from scratch)
+
+<details>
+<summary>Expand if you're setting this up without the pre-filled .env</summary>
+
+You'll need:
+- An [Anthropic API key](https://console.anthropic.com/) (`ANTHROPIC_API_KEY`)
+- A [Supabase](https://supabase.com/) project with the schema below
+
+Copy `.env.example` to `.env` and fill in all values:
 
 ```
-# Server-side only — never exposed to the client
-ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com → API Keys
-SUPABASE_URL=https://xxxx.supabase.co # Supabase dashboard → Project Settings → API → Project URL
-SUPABASE_SERVICE_KEY=...              # Project Settings → API → service_role secret
+ANTHROPIC_API_KEY=sk-ant-...
+SUPABASE_URL=https://xxxx.supabase.co
+SUPABASE_SERVICE_KEY=...              # Project Settings → API → service_role
 
-# Client-side — anon key only, safe to expose
 EXPO_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=...     # Project Settings → API → anon public
-
-# Leave blank for local dev; set to your deployed server URL in production
-EXPO_PUBLIC_API_URL=
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...    # Project Settings → API → anon public
+EXPO_PUBLIC_API_URL=                 # leave blank for local dev
 ```
 
-### 3. Set up Supabase
-
-Run all of the following in your Supabase project's **SQL Editor** (Dashboard → SQL Editor → New query):
+Run the following in your Supabase **SQL Editor**:
 
 ```sql
--- Recipe cache (avoids duplicate Claude calls for the same ingredients + preferences)
 create table recipe_cache (
   id          uuid        primary key default gen_random_uuid(),
   cache_key   text        unique not null,
@@ -86,13 +105,11 @@ create table recipe_cache (
   created_at  timestamptz default now()
 );
 
--- User profiles (created automatically on sign-up via trigger below)
 create table profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
   created_at timestamptz default now()
 );
 
--- Saved recipes per user
 create table favorites (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid references profiles(id) on delete cascade not null,
@@ -102,36 +119,30 @@ create table favorites (
   unique (user_id, recipe_name)
 );
 
--- Per-user daily API usage counters (rate limiting)
 create table usage (
   user_id          uuid references profiles(id) on delete cascade not null,
-  date             text not null,              -- YYYY-MM-DD
+  date             text not null,
   ingredient_calls integer not null default 0,
   recipe_calls     integer not null default 0,
   primary key (user_id, date)
 );
 
--- Atomic upsert for usage — prevents race conditions on concurrent requests
 create or replace function public.increment_usage(p_user_id uuid, p_field text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   insert into public.usage (user_id, date, ingredient_calls, recipe_calls)
     values (p_user_id, current_date::text, 0, 0)
     on conflict (user_id, date) do nothing;
-
   if p_field = 'ingredient_calls' then
-    update public.usage
-      set ingredient_calls = ingredient_calls + 1
+    update public.usage set ingredient_calls = ingredient_calls + 1
       where user_id = p_user_id and date = current_date::text;
   elsif p_field = 'recipe_calls' then
-    update public.usage
-      set recipe_calls = recipe_calls + 1
+    update public.usage set recipe_calls = recipe_calls + 1
       where user_id = p_user_id and date = current_date::text;
   end if;
 end;
 $$;
 
--- Auto-create a profile row whenever a new user signs up
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -145,31 +156,7 @@ create trigger on_auth_user_created
   for each row execute procedure public.handle_new_user();
 ```
 
-### 4. Run the app
-
-**On a physical device (recommended):**
-
-```bash
-npx expo start
-```
-
-Scan the QR code with the Expo Go app. Your phone and Mac must be on the same Wi-Fi network. If the connection fails, run `npx expo start --tunnel` instead (works across any network via a relay).
-
-**In the iOS simulator:**
-
-```bash
-npx expo run:ios
-```
-
-Requires Xcode with at least one simulator installed (Xcode → Settings → Platforms → iOS).
-
-**In the Android emulator:**
-
-```bash
-npx expo run:android
-```
-
-Requires Android Studio with a virtual device configured.
+</details>
 
 ## Project Structure
 
