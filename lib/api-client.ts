@@ -1,6 +1,7 @@
 import Constants from 'expo-constants';
 import { Recipe } from '@/types/recipe';
 import { UserPreferences } from '@/types/preferences';
+import { WeeklyMealPlan } from '@/types/meal-plan';
 import { supabase } from '@/lib/supabase-client';
 
 function getApiBase(): string {
@@ -51,12 +52,66 @@ export function extractIngredients(imageBase64: string, imageMediaType: string):
   return post<string[]>('/api/ingredients', { imageBase64, imageMediaType });
 }
 
-export function fetchRecipes(
+export type RecipeStreamEvent =
+  | { type: 'progress'; chars: number }
+  | { type: 'complete'; recipes: Recipe[] }
+  | { type: 'error'; message: string };
+
+export async function* streamRecipes(
   ingredients: string[],
   excludeRecipeNames: string[],
   preferences: UserPreferences
-): Promise<Recipe[]> {
-  return post<Recipe[]>('/api/recipes', { ingredients, excludeRecipeNames, preferences });
+): AsyncGenerator<RecipeStreamEvent> {
+  const response = await fetch(`${getApiBase()}/api/recipes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
+    body: JSON.stringify({ ingredients, excludeRecipeNames, preferences }),
+  });
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error((data as { error?: string }).error ?? `Server error ${response.status}`);
+  }
+
+  // React Native's fetch may not expose response.body as a ReadableStream.
+  // Fall back to reading the full SSE text at once and parsing the events.
+  if (!response.body || typeof (response.body as any).getReader !== 'function') {
+    const text = await response.text();
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        yield JSON.parse(line.slice(6)) as RecipeStreamEvent;
+      } catch {}
+    }
+    return;
+  }
+
+  const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  let lineBuffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    lineBuffer += decoder.decode(value, { stream: true });
+    const lines = lineBuffer.split('\n');
+    lineBuffer = lines.pop() ?? '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      try {
+        yield JSON.parse(line.slice(6)) as RecipeStreamEvent;
+      } catch {}
+    }
+  }
+}
+
+export function fetchMealPlan(
+  ingredients: string[],
+  preferences: UserPreferences
+): Promise<WeeklyMealPlan> {
+  return post<WeeklyMealPlan>('/api/meal-plan', { ingredients, preferences });
 }
 
 export function getFavorites(): Promise<{ id: string; recipe: Recipe }[]> {

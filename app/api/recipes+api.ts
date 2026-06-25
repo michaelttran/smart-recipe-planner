@@ -4,8 +4,6 @@ import { UserPreferences } from '@/types/preferences';
 import { Recipe, RecipeListResponse } from '@/types/recipe';
 import { requireUser, checkUsage, incrementUsage, errorResponse } from '@/lib/api-helpers';
 
-// ── Claude config ────────────────────────────────────────────────────────────
-
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 
 const MODEL_BY_TIME = {
@@ -112,63 +110,6 @@ function buildPrompt(ingredients: string[], prefs: UserPreferences, excludeNames
   return lines.join('\n');
 }
 
-async function callClaude(
-  ingredients: string[],
-  preferences: UserPreferences,
-  excludeNames: string[]
-): Promise<Recipe[]> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
-
-  const model = MODEL_BY_TIME[preferences.timeAvailable];
-  const useThinking = preferences.timeAvailable === 'leisurely';
-  const prompt = buildPrompt(ingredients, preferences, excludeNames);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 90000);
-
-  let response: Response;
-  try {
-    response = await fetch(ANTHROPIC_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 8000,
-        ...(useThinking ? { thinking: { type: 'adaptive' } } : {}),
-        output_config: { format: { type: 'json_schema', schema: RECIPE_JSON_SCHEMA } },
-        messages: [
-          { role: 'user', content: prompt },
-        ],
-      }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Claude API error ${response.status}: ${text}`);
-  }
-
-  const data = await response.json();
-  const textBlock = data.content?.find((b: { type: string }) => b.type === 'text');
-  if (!textBlock?.text) throw new Error('No text response from Claude');
-
-  const result: RecipeListResponse = JSON.parse(textBlock.text);
-  if (!Array.isArray(result.recipes) || result.recipes.length === 0)
-    throw new Error('Claude did not return any recipes');
-
-  return result.recipes;
-}
-
-// ── Cache key ────────────────────────────────────────────────────────────────
-
 function buildCacheKey(ingredients: string[], preferences: UserPreferences): string {
   const stablePrefs = {
     timeAvailable: preferences.timeAvailable,
@@ -185,9 +126,34 @@ function buildCacheKey(ingredients: string[], preferences: UserPreferences): str
     .digest('hex');
 }
 
-// ── Route handler ────────────────────────────────────────────────────────────
+function sseStream(chunks: (() => Promise<void>)[]): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      const enqueue = (data: object) =>
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+      try {
+        for (const chunk of chunks) {
+          await chunk();
+        }
+      } finally {
+        controller.close();
+      }
+      void enqueue; // silence unused warning — enqueue is used inside closures
+    },
+  });
+  return new Response(stream, {
+    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+  });
+}
 
 export async function POST(request: Request) {
+  const encoder = new TextEncoder();
+
+  function sse(data: object): Uint8Array {
+    return encoder.encode(`data: ${JSON.stringify(data)}\n\n`);
+  }
+
   try {
     const userId = await requireUser(request);
 
@@ -198,11 +164,14 @@ export async function POST(request: Request) {
     };
 
     const isRefresh = excludeRecipeNames?.length > 0;
+    const hasSupa = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY;
+    const supabase = hasSupa
+      ? createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
+      : null;
 
-    if (!isRefresh && process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_KEY) {
-      const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+    // ── Cache check ────────────────────────────────────────────────────────────
+    if (!isRefresh && supabase) {
       const cacheKey = buildCacheKey(ingredients, preferences);
-
       const { data: cached } = await supabase
         .from('recipe_cache')
         .select('recipes, hit_count')
@@ -210,31 +179,118 @@ export async function POST(request: Request) {
         .single();
 
       if (cached) {
-        // Cache hit — no Claude call, doesn't count against rate limit
         supabase
           .from('recipe_cache')
           .update({ hit_count: cached.hit_count + 1 })
           .eq('cache_key', cacheKey)
           .then(() => {});
-        return Response.json(cached.recipes);
+
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(sse({ type: 'complete', recipes: cached.recipes }));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+        });
       }
-
-      await checkUsage(userId, 'recipe_calls');
-      const recipes = await callClaude(ingredients, preferences, excludeRecipeNames ?? []);
-      incrementUsage(userId, 'recipe_calls');
-
-      supabase
-        .from('recipe_cache')
-        .insert({ cache_key: cacheKey, recipes, hit_count: 1 })
-        .then(() => {});
-
-      return Response.json(recipes);
     }
 
+    // ── Rate limit ─────────────────────────────────────────────────────────────
     await checkUsage(userId, 'recipe_calls');
-    const recipes = await callClaude(ingredients, preferences, excludeRecipeNames ?? []);
-    incrementUsage(userId, 'recipe_calls');
-    return Response.json(recipes);
+
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY is not set on the server.');
+
+    const model = MODEL_BY_TIME[preferences.timeAvailable];
+    const useThinking = preferences.timeAvailable === 'leisurely';
+    const prompt = buildPrompt(ingredients, preferences, excludeRecipeNames ?? []);
+    const cacheKey = !isRefresh && supabase ? buildCacheKey(ingredients, preferences) : null;
+
+    // ── Streaming Claude call ─────────────────────────────────────────────────
+    const claudeRes = await fetch(ANTHROPIC_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 8000,
+        stream: true,
+        ...(useThinking ? { thinking: { type: 'adaptive' } } : {}),
+        output_config: { format: { type: 'json_schema', schema: RECIPE_JSON_SCHEMA } },
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!claudeRes.ok) {
+      const text = await claudeRes.text();
+      throw new Error(`Claude API error ${claudeRes.status}: ${text}`);
+    }
+
+    const outputStream = new ReadableStream({
+      async start(controller) {
+        const reader = claudeRes.body!.getReader();
+        const dec = new TextDecoder();
+        let accumulatedText = '';
+        let lineBuffer = '';
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            lineBuffer += dec.decode(value, { stream: true });
+            const lines = lineBuffer.split('\n');
+            lineBuffer = lines.pop() ?? '';
+
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const raw = line.slice(6).trim();
+              if (raw === '[DONE]') continue;
+              try {
+                const event = JSON.parse(raw);
+                if (
+                  event.type === 'content_block_delta' &&
+                  event.delta?.type === 'text_delta'
+                ) {
+                  accumulatedText += event.delta.text;
+                  controller.enqueue(
+                    sse({ type: 'progress', chars: accumulatedText.length })
+                  );
+                }
+              } catch {}
+            }
+          }
+
+          const result: RecipeListResponse = JSON.parse(accumulatedText);
+          const recipes = result.recipes;
+
+          controller.enqueue(sse({ type: 'complete', recipes }));
+
+          // Background: usage + cache
+          incrementUsage(userId, 'recipe_calls');
+          if (supabase && cacheKey) {
+            supabase
+              .from('recipe_cache')
+              .insert({ cache_key: cacheKey, recipes, hit_count: 1 })
+              .then(() => {});
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Failed to generate recipes';
+          controller.enqueue(sse({ type: 'error', message }));
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(outputStream, {
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+    });
   } catch (err) {
     return errorResponse(err);
   }

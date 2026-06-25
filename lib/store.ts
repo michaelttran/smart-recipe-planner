@@ -1,5 +1,6 @@
 import { Recipe } from '@/types/recipe';
 import { UserPreferences, DEFAULT_PREFERENCES } from '@/types/preferences';
+import { WeeklyMealPlan } from '@/types/meal-plan';
 
 interface AppStore {
   imageBase64: string | null;
@@ -11,6 +12,7 @@ interface AppStore {
   allShownRecipeNames: string[];
   preferences: UserPreferences;
   favorites: Recipe[];
+  mealPlan: WeeklyMealPlan | null;
 }
 
 const store: AppStore = {
@@ -23,6 +25,7 @@ const store: AppStore = {
   allShownRecipeNames: [],
   preferences: { ...DEFAULT_PREFERENCES },
   favorites: [],
+  mealPlan: null,
 };
 
 export function setImage(
@@ -86,6 +89,10 @@ export function removeFromFavorites(recipeName: string) {
 
 export function isFavorite(recipeName: string): boolean {
   return store.favorites.some((r) => r.name === recipeName);
+}
+
+export function setMealPlan(plan: WeeklyMealPlan) {
+  store.mealPlan = plan;
 }
 
 export function getStore() {

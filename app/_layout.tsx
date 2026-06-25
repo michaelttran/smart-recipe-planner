@@ -54,6 +54,10 @@ function RootLayoutNav() {
           name="recipe/[id]"
           options={{ title: '', headerBackTitle: 'Recipes' }}
         />
+        <Stack.Screen
+          name="meal-plan"
+          options={{ title: 'Your Week', headerBackTitle: 'Customize' }}
+        />
       </Stack>
       {session && <TabBar />}
     </View>

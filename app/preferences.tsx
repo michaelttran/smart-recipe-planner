@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,8 +13,8 @@ import {
   View,
 } from 'react-native';
 import { router } from 'expo-router';
-import { fetchRecipes } from '@/lib/api-client';
-import { getStore, setPreferences, setRecipes } from '@/lib/store';
+import { streamRecipes, fetchMealPlan } from '@/lib/api-client';
+import { getStore, setPreferences, setRecipes, setMealPlan } from '@/lib/store';
 import { UserPreferences, DEFAULT_PREFERENCES } from '@/types/preferences';
 
 const BRAND = '#2D4A1E';
@@ -42,6 +45,8 @@ const CUISINE_TYPES = [
 export default function PreferencesScreen() {
   const [prefs, setPrefs] = useState<UserPreferences>({ ...DEFAULT_PREFERENCES });
   const [loading, setLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [streamChars, setStreamChars] = useState(0);
   const hasRecipes = getStore().recipes.length > 0;
 
   useEffect(() => {
@@ -73,16 +78,21 @@ export default function PreferencesScreen() {
     if (!store.imageBase64) return;
 
     setLoading(true);
+    setStreamChars(0);
     setPreferences(prefs);
 
     try {
-      const recipes = await fetchRecipes(
-        store.ingredients,
-        store.allShownRecipeNames,
-        prefs
-      );
-      setRecipes(recipes);
-      router.push('/recipes');
+      for await (const event of streamRecipes(store.ingredients, store.allShownRecipeNames, prefs)) {
+        if (event.type === 'progress') {
+          setStreamChars(event.chars);
+        } else if (event.type === 'complete') {
+          setRecipes(event.recipes);
+          router.push('/recipes');
+          break;
+        } else if (event.type === 'error') {
+          throw new Error(event.message);
+        }
+      }
     } catch (err) {
       Alert.alert(
         'Error',
@@ -90,10 +100,36 @@ export default function PreferencesScreen() {
       );
     } finally {
       setLoading(false);
+      setStreamChars(0);
+    }
+  }
+
+  async function planMyWeek() {
+    const store = getStore();
+    if (!store.imageBase64) return;
+
+    setPlanLoading(true);
+    setPreferences(prefs);
+
+    try {
+      const plan = await fetchMealPlan(store.ingredients, prefs);
+      setMealPlan(plan);
+      router.push('/meal-plan');
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Something went wrong. Please try again.'
+      );
+    } finally {
+      setPlanLoading(false);
     }
   }
 
   return (
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
     <ScrollView
       style={styles.container}
       contentContainerStyle={styles.content}
@@ -236,6 +272,8 @@ export default function PreferencesScreen() {
           multiline
           numberOfLines={2}
           returnKeyType="done"
+          blurOnSubmit
+          onSubmitEditing={() => Keyboard.dismiss()}
         />
       </Section>
 
@@ -244,26 +282,43 @@ export default function PreferencesScreen() {
         <Pressable
           style={styles.backBtn}
           onPress={() => router.replace('/recipes')}
-          disabled={loading}
+          disabled={loading || planLoading}
         >
           <Text style={styles.backBtnText}>Back to recipes →</Text>
         </Pressable>
       )}
       <Pressable
-        style={[styles.findBtn, loading && styles.findBtnDisabled]}
+        style={[styles.findBtn, (loading || planLoading) && styles.findBtnDisabled]}
         onPress={findRecipes}
-        disabled={loading}
+        disabled={loading || planLoading}
       >
         {loading ? (
           <View style={styles.loadingRow}>
             <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.findBtnText}>Finding your recipes…</Text>
+            <Text style={styles.findBtnText}>
+              {streamChars > 0 ? `Generating… ${streamChars} chars` : 'Starting…'}
+            </Text>
           </View>
         ) : (
           <Text style={styles.findBtnText}>{hasRecipes ? 'Find New Recipes' : 'Find My Recipes'}</Text>
         )}
       </Pressable>
+      <Pressable
+        style={[styles.planBtn, (loading || planLoading) && styles.findBtnDisabled]}
+        onPress={planMyWeek}
+        disabled={loading || planLoading}
+      >
+        {planLoading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator color={BRAND} size="small" />
+            <Text style={styles.planBtnText}>Planning your week…</Text>
+          </View>
+        ) : (
+          <Text style={styles.planBtnText}>Plan my week</Text>
+        )}
+      </Pressable>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -460,6 +515,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  planBtn: {
+    borderWidth: 1.5,
+    borderColor: BRAND,
+    marginHorizontal: 20,
+    marginTop: 10,
+    marginBottom: 8,
+    paddingVertical: 15,
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  planBtnText: {
+    color: BRAND,
+    fontSize: 15,
+    fontWeight: '600',
     letterSpacing: 0.2,
   },
   loadingRow: {

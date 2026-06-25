@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import {
-  ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Pressable,
   ScrollView,
@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { router, useNavigation } from 'expo-router';
 import { useLayoutEffect } from 'react';
-import { fetchRecipes } from '@/lib/api-client';
+import { streamRecipes } from '@/lib/api-client';
 import { getStore, appendRecipes } from '@/lib/store';
 import { Recipe } from '@/types/recipe';
 
@@ -37,7 +37,39 @@ export default function RecipesScreen() {
   const store = getStore();
   const [recipes, setLocalRecipes] = useState<Recipe[]>(store.recipes);
   const [refreshing, setRefreshing] = useState(false);
+  const [streamChars, setStreamChars] = useState(0);
   const navigation = useNavigation();
+
+  // Per-card animation values keyed by recipe.id
+  const animMap = useRef<Map<string, Animated.Value>>(new Map());
+  const animatedCount = useRef(0);
+
+  useEffect(() => {
+    const newRecipes = recipes.slice(animatedCount.current);
+    if (newRecipes.length === 0) return;
+
+    // Create anim values for new recipes
+    newRecipes.forEach((r) => {
+      if (!animMap.current.has(r.id)) {
+        animMap.current.set(r.id, new Animated.Value(0));
+      }
+    });
+
+    // Stagger spring each card in
+    Animated.stagger(
+      80,
+      newRecipes.map((r) =>
+        Animated.spring(animMap.current.get(r.id)!, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 60,
+          friction: 10,
+        })
+      )
+    ).start();
+
+    animatedCount.current = recipes.length;
+  }, [recipes.length]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -48,27 +80,38 @@ export default function RecipesScreen() {
           disabled={refreshing}
         >
           {refreshing ? (
-            <ActivityIndicator color={BRAND} size="small" />
+            <Text style={styles.refreshBtnText}>
+              {streamChars > 0 ? `${streamChars}…` : 'Loading…'}
+            </Text>
           ) : (
             <Text style={styles.refreshBtnText}>New recipes</Text>
           )}
         </Pressable>
       ),
     });
-  }, [refreshing]);
+  }, [refreshing, streamChars]);
 
   async function handleRefresh() {
     const { imageBase64, allShownRecipeNames } = getStore();
     if (!imageBase64) return;
     setRefreshing(true);
+    setStreamChars(0);
     try {
-      const newRecipes = await fetchRecipes(
+      for await (const event of streamRecipes(
         getStore().ingredients,
         allShownRecipeNames,
         getStore().preferences
-      );
-      appendRecipes(newRecipes);
-      setLocalRecipes([...getStore().recipes]);
+      )) {
+        if (event.type === 'progress') {
+          setStreamChars(event.chars);
+        } else if (event.type === 'complete') {
+          appendRecipes(event.recipes);
+          setLocalRecipes([...getStore().recipes]);
+          break;
+        } else if (event.type === 'error') {
+          throw new Error(event.message);
+        }
+      }
     } catch (err) {
       Alert.alert(
         'Error',
@@ -76,6 +119,7 @@ export default function RecipesScreen() {
       );
     } finally {
       setRefreshing(false);
+      setStreamChars(0);
     }
   }
 
@@ -113,8 +157,22 @@ export default function RecipesScreen() {
             )}
             {batch.map((recipe, localIdx) => {
               const globalIdx = globalOffset + localIdx;
+              const anim = animMap.current.get(recipe.id) ?? new Animated.Value(1);
               return (
-                <View key={recipe.id}>
+                <Animated.View
+                  key={recipe.id}
+                  style={{
+                    opacity: anim,
+                    transform: [
+                      {
+                        translateY: anim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [24, 0],
+                        }),
+                      },
+                    ],
+                  }}
+                >
                   <Pressable
                     onPress={() => router.push(`/recipe/${globalIdx}`)}
                     style={({ pressed }) => [styles.card, pressed && { opacity: 0.75 }]}
@@ -147,7 +205,7 @@ export default function RecipesScreen() {
                     </View>
                   </Pressable>
                   <View style={styles.divider} />
-                </View>
+                </Animated.View>
               );
             })}
           </View>
