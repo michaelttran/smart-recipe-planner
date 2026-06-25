@@ -25,7 +25,7 @@ mise (a nod to *mise en place*) lets you photograph whatever ingredients you hav
 
 | Layer | Choice |
 |---|---|
-| Framework | Expo SDK 52 + Expo Router 4 |
+| Framework | Expo SDK 54 + Expo Router 6 |
 | Platform | React Native (iOS & Android) |
 | Language | TypeScript |
 | AI | Claude API via Expo API Routes (Haiku 4.5 / Sonnet 4.6 / Opus 4.8) |
@@ -37,48 +37,47 @@ mise (a nod to *mise en place*) lets you photograph whatever ingredients you hav
 ## Prerequisites
 
 - Node.js 18+
-- Expo CLI (`npm install -g expo-cli`)
 - An [Anthropic API key](https://console.anthropic.com/)
-- A [Supabase](https://supabase.com/) project
-- Expo Go app (for device testing) or Xcode (for iOS simulator)
+- A [Supabase](https://supabase.com/) project (free tier works)
+- For device testing: **Expo Go** (download from the App Store — use the SDK 54 version)
+- For iOS simulator: Xcode 15+
 
-## Getting Started
+## Setup
+
+### 1. Install dependencies
 
 ```bash
-# Install dependencies
 npm install
+```
 
-# Copy the environment template and fill in your keys
+### 2. Configure environment variables
+
+```bash
 cp .env.example .env
-
-# Start the Metro bundler
-npx expo start
-
-# Or open directly in the iOS simulator
-npx expo run:ios
 ```
 
-## Environment Variables
+Open `.env` and fill in all six values:
 
 ```
-# Server-side only (Expo API routes)
-ANTHROPIC_API_KEY=sk-ant-...
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_KEY=your-service-role-key
+# Server-side only — never exposed to the client
+ANTHROPIC_API_KEY=sk-ant-...          # console.anthropic.com → API Keys
+SUPABASE_URL=https://xxxx.supabase.co # Supabase dashboard → Project Settings → API → Project URL
+SUPABASE_SERVICE_KEY=...              # Project Settings → API → service_role secret
 
-# Client-side (safe to expose — anon key, not service key)
-EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+# Client-side — anon key only, safe to expose
+EXPO_PUBLIC_SUPABASE_URL=https://xxxx.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=...     # Project Settings → API → anon public
 
-# Production only
-EXPO_PUBLIC_API_URL=https://your-deployed-server.com
+# Leave blank for local dev; set to your deployed server URL in production
+EXPO_PUBLIC_API_URL=
 ```
 
-## Supabase Setup
+### 3. Set up Supabase
 
-Run the following in your Supabase **SQL Editor**:
+Run all of the following in your Supabase project's **SQL Editor** (Dashboard → SQL Editor → New query):
 
 ```sql
+-- Recipe cache (avoids duplicate Claude calls for the same ingredients + preferences)
 create table recipe_cache (
   id          uuid        primary key default gen_random_uuid(),
   cache_key   text        unique not null,
@@ -87,11 +86,13 @@ create table recipe_cache (
   created_at  timestamptz default now()
 );
 
+-- User profiles (created automatically on sign-up via trigger below)
 create table profiles (
   id         uuid primary key references auth.users(id) on delete cascade,
   created_at timestamptz default now()
 );
 
+-- Saved recipes per user
 create table favorites (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid references profiles(id) on delete cascade not null,
@@ -101,7 +102,36 @@ create table favorites (
   unique (user_id, recipe_name)
 );
 
--- Auto-create a profile whenever a user signs up
+-- Per-user daily API usage counters (rate limiting)
+create table usage (
+  user_id          uuid references profiles(id) on delete cascade not null,
+  date             text not null,              -- YYYY-MM-DD
+  ingredient_calls integer not null default 0,
+  recipe_calls     integer not null default 0,
+  primary key (user_id, date)
+);
+
+-- Atomic upsert for usage — prevents race conditions on concurrent requests
+create or replace function public.increment_usage(p_user_id uuid, p_field text)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.usage (user_id, date, ingredient_calls, recipe_calls)
+    values (p_user_id, current_date::text, 0, 0)
+    on conflict (user_id, date) do nothing;
+
+  if p_field = 'ingredient_calls' then
+    update public.usage
+      set ingredient_calls = ingredient_calls + 1
+      where user_id = p_user_id and date = current_date::text;
+  elsif p_field = 'recipe_calls' then
+    update public.usage
+      set recipe_calls = recipe_calls + 1
+      where user_id = p_user_id and date = current_date::text;
+  end if;
+end;
+$$;
+
+-- Auto-create a profile row whenever a new user signs up
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
@@ -114,6 +144,32 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
 ```
+
+### 4. Run the app
+
+**On a physical device (recommended):**
+
+```bash
+npx expo start
+```
+
+Scan the QR code with the Expo Go app. Your phone and Mac must be on the same Wi-Fi network. If the connection fails, run `npx expo start --tunnel` instead (works across any network via a relay).
+
+**In the iOS simulator:**
+
+```bash
+npx expo run:ios
+```
+
+Requires Xcode with at least one simulator installed (Xcode → Settings → Platforms → iOS).
+
+**In the Android emulator:**
+
+```bash
+npx expo run:android
+```
+
+Requires Android Studio with a virtual device configured.
 
 ## Project Structure
 
@@ -208,6 +264,12 @@ Monitor spend at **console.anthropic.com → Usage**.
 ---
 
 ## Changelog
+
+### v0.4.0
+
+- **SDK 54 upgrade** — upgraded from Expo SDK 52 to SDK 54 (React Native 0.76 → 0.81, React 18 → 19, Expo Router 4 → 6). The app now works with the public Expo Go app without a custom development build
+- **Streaming SSE fallback** — React Native's `fetch` does not expose `response.body` as a `ReadableStream`; the streaming client now detects this and falls back to reading the full SSE response body as text, then parsing all events at once. The `complete` event still fires and cards still animate in; the live character counter is skipped on this path
+- **Keyboard handling on Customize screen** — wrapped the preferences scroll view in `KeyboardAvoidingView` and added `blurOnSubmit` to the ingredients text field so the Done key dismisses the keyboard and the CTA buttons remain reachable while typing
 
 ### v0.3.0
 

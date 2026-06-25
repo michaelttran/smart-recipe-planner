@@ -45,6 +45,7 @@
 - Instacart has no public consumer API — rejected that path and chose native share sheet instead
 - Moved `_helpers.ts` out of `app/api/` after Expo Router flagged it as a missing route export
 - The favorites ID mismatch (client timestamp IDs vs Supabase UUIDs) was a subtle bug that required a deliberate design decision to unify on recipe name as the stable key
+- On iOS, a `multiline` `TextInput` ignores the `returnKeyType="done"` setting — the Done key inserts a newline instead of dismissing the keyboard, blocking the CTA buttons below it. Fixed with `blurOnSubmit` and `KeyboardAvoidingView`; a purely web-trained mental model would miss this platform-specific behavior entirely
 
 ---
 
@@ -95,7 +96,7 @@ The insight is that the bottleneck in home cooking isn't skill — it's knowing 
 
 | Choice | Why |
 |---|---|
-| Expo SDK 52 + Router 4 | Single codebase for iOS and Android; Expo API Routes let you run server-side Node.js handlers in the same project, so the API key never touches the client |
+| Expo SDK 54 + Router 6 | Single codebase for iOS and Android; Expo API Routes let you run server-side Node.js handlers in the same project, so the API key never touches the client. SDK 54 aligns with the public Expo Go app so no custom build is needed for device demos |
 | Claude API via direct `fetch` | The official Node.js SDK doesn't work in React Native / Metro due to Node built-in dependencies. Direct fetch works in any environment |
 | Model routing (Haiku / Sonnet / Opus) | Match model capability to task complexity — don't pay Opus prices for a 15-minute snack |
 | Supabase | Auth, database, and RPC functions in one platform — no separate auth service, no separate cache layer to operate |
@@ -122,6 +123,9 @@ Hashing the raw image would make the cache useless — two photos of the same fr
 
 **Streaming via SSE — client code is uniform**
 The recipes route always returns `text/event-stream`, whether the response comes from cache or Claude. Cache hits send a single `{type: "complete"}` event immediately; Claude calls send `{type: "progress"}` events followed by `{type: "complete"}` at the end. The client doesn't need to handle two different response formats — it just reads the stream. This makes the streaming architecture easier to test and extend.
+
+**Graceful SSE fallback for React Native**
+React Native's `fetch` implementation doesn't expose `response.body` as a `ReadableStream` the way browsers do. Rather than switching to a different transport, the client detects whether `.getReader()` is available and falls back to reading the entire SSE response as text, then replaying the events in order. The `complete` event fires correctly either way, so recipe cards animate in and the meal plan loads — the only difference is the live character counter is skipped on device. The server-side SSE architecture is unchanged.
 
 **Meal plan as a separate Claude flow on the same data**
 Rather than repurposing the recipe prompt, the meal plan uses a distinct prompt that asks Claude to reason about ingredient reuse across 7 days. This is a different task — planning and optimization vs. generation — and gets a different model call (Sonnet, not model-routed, because the complexity is uniform regardless of time preference). The two flows share the same auth, rate limiting, and ingredient/preference data from the store.
