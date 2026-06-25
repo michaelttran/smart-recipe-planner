@@ -48,8 +48,9 @@ mise (a nod to *mise en place*) lets you photograph whatever ingredients you hav
 # 1. Install dependencies
 npm install
 
-# 2. Place the .env file in the repo root (same folder as package.json)
-#    It should already contain all keys — no edits needed.
+# 2. Create a .env file in the repo root (same folder as package.json)
+#    Paste the credentials from the 1password link into the .env file. 
+#    I pasted the link in the ashby notes submission section
 
 # 3. Start the bundler
 npx expo start
@@ -157,6 +158,155 @@ create trigger on_auth_user_created
 ```
 
 </details>
+
+## Architecture
+
+### System Components
+
+```mermaid
+graph TB
+    subgraph Client ["Mobile Client (React Native / Expo)"]
+        Screens["Screens\n(Expo Router)"]
+        Store["Global Store\nlib/store.ts"]
+        ApiClient["API Client\nlib/api-client.ts"]
+        SupaClient["Supabase Client\nlib/supabase-client.ts"]
+        AuthCtx["Auth Context\ncontexts/AuthContext.tsx"]
+    end
+
+    subgraph Server ["Expo API Routes (Node.js — same process, server-side)"]
+        IngrAPI["POST /api/ingredients\nHaiku vision extraction"]
+        RecipeAPI["POST /api/recipes\nClaude generation + SSE stream"]
+        MealAPI["POST /api/meal-plan\nSonnet 7-day planner"]
+        FavAPI["GET/POST/DELETE /api/favorites"]
+        Helpers["Shared Middleware\nlib/api-helpers.ts\nrequireUser · checkUsage · incrementUsage"]
+    end
+
+    subgraph External ["External Services"]
+        Claude["Anthropic API\nHaiku 4.5 · Sonnet 4.6 · Opus 4.8"]
+        Supabase["Supabase\nAuth · recipe_cache · favorites · usage · profiles"]
+    end
+
+    Screens --> ApiClient
+    Screens --> Store
+    AuthCtx --> SupaClient
+    ApiClient --> IngrAPI & RecipeAPI & MealAPI & FavAPI
+    IngrAPI & RecipeAPI & MealAPI & FavAPI --> Helpers
+    Helpers --> Supabase
+    IngrAPI & RecipeAPI & MealAPI --> Claude
+    RecipeAPI --> Supabase
+    FavAPI --> Supabase
+    SupaClient --> Supabase
+```
+
+### Screen Navigation
+
+```mermaid
+flowchart TD
+    Auth["Sign In / Sign Up"]
+    Discover["Discover\ncamera or photo picker"]
+    Ingr["Ingredients\nreview & edit extracted list"]
+    Prefs["Customize\ntime · meal type · dietary · cuisine"]
+    Recipes["Recipes\n5 cards streamed live"]
+    Detail["Recipe Detail\nmacros · steps · share · bookmark"]
+    MealPlan["Meal Plan\nMon–Sun + shopping list"]
+    Saved["Saved\nbookmarked recipes"]
+
+    Auth --> Discover
+    Discover -->|photo taken or picked| Ingr
+    Ingr --> Prefs
+    Prefs -->|Find my recipes| Recipes
+    Prefs -->|Plan my week| MealPlan
+    Recipes -->|tap card| Detail
+    Recipes -->|New recipes button| Recipes
+    MealPlan -->|tap day| Detail
+    Saved -->|tap card| Detail
+    Detail -->|Shop ingredients| Share["Native Share Sheet"]
+```
+
+### Recipe Generation Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Mobile App
+    participant API as /api/recipes
+    participant DB as Supabase
+    participant Claude as Anthropic API
+
+    App->>API: POST {ingredients, preferences, excludeNames}<br/>Authorization: Bearer JWT
+
+    API->>DB: requireUser() — validate JWT
+    DB-->>API: userId
+
+    alt First load (not a refresh)
+        API->>DB: SELECT recipe_cache WHERE cache_key = SHA-256(ingredients + prefs)
+        DB-->>API: cached recipes found
+        API-->>App: SSE › {type:"complete", recipes:[...]}
+    else Cache miss OR refresh
+        API->>DB: checkUsage(userId, "recipe_calls") — 429 if ≥10/day
+        DB-->>API: within limit
+
+        Note over API,Claude: Model selected by time pref:<br/>quick→Haiku · medium→Sonnet · leisurely→Opus+thinking
+
+        API->>Claude: POST /v1/messages {stream:true, output_config:json_schema}
+        loop Token streaming
+            Claude-->>API: SSE content_block_delta events
+            API-->>App: SSE › {type:"progress", chars:N}
+        end
+        Claude-->>API: stream complete — full JSON
+        API-->>App: SSE › {type:"complete", recipes:[...]}
+
+        API->>DB: incrementUsage(userId, "recipe_calls")
+        API->>DB: INSERT recipe_cache {cache_key, recipes}
+    end
+```
+
+### Global Store
+
+```mermaid
+erDiagram
+    STORE {
+        string imageBase64
+        string imageUri
+        string imageMediaType
+        string[] ingredients
+        Recipe[] recipes
+        number[] recipeBatchSizes
+        string[] allShownRecipeNames
+        UserPreferences preferences
+        Recipe[] favorites
+        WeeklyMealPlan mealPlan
+    }
+    STORE ||--o{ Recipe : "recipes / favorites"
+    STORE ||--|| UserPreferences : "preferences"
+    STORE ||--o| WeeklyMealPlan : "mealPlan"
+
+    Recipe {
+        string id
+        string name
+        string description
+        string prepTime
+        string cookTime
+        string totalTime
+        int servings
+        string difficulty
+        Ingredient[] ingredients
+        string[] instructions
+        string[] tags
+        Macros macros
+    }
+
+    UserPreferences {
+        string timeAvailable
+        bool useAllIngredients
+        string mealType
+        string[] flavorProfiles
+        string[] dietaryNeeds
+        string[] cuisineTypes
+        string extraIngredients
+    }
+```
+
+---
 
 ## Project Structure
 
