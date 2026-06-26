@@ -97,10 +97,11 @@ The insight is that the bottleneck in home cooking isn't skill — it's knowing 
 | Choice | Why |
 |---|---|
 | Expo SDK 54 + Router 6 | Single codebase for iOS and Android; Expo API Routes let you run server-side Node.js handlers in the same project, so the API key never touches the client. SDK 54 aligns with the public Expo Go app so no custom build is needed for device demos |
-| Claude API via direct `fetch` | The official Node.js SDK doesn't work in React Native / Metro due to Node built-in dependencies. Direct fetch works in any environment |
-| Model routing (Haiku / Sonnet / Opus) | Match model capability to task complexity — don't pay Opus prices for a 15-minute snack |
-| Supabase | Auth, database, and RPC functions in one platform — no separate auth service, no separate cache layer to operate |
-| `expo-secure-store` | Encrypted on-device storage for JWT tokens — correct default for mobile auth |
+| React Native | Write once, run on iOS and Android from a single codebase. Camera, photo library, share sheet, and secure storage all map to real native device APIs — no web-to-native wrappers needed |
+| TypeScript | Catches type mismatches at compile time rather than at runtime on a user's device. The Claude API response shape is complex (nested recipes, macros, per-ingredient fields) — a typo in a field name surfaces immediately rather than silently returning `undefined` in production |
+| Claude API via Expo API Routes (Haiku 4.5 / Sonnet 4.6 / Opus 4.8) | The official Node.js SDK doesn't work in React Native / Metro due to Node built-in dependencies, so the API is called via `fetch` from server-side Expo API Routes — the key never reaches the client. Model is routed by cooking time preference: Haiku for quick recipes (fast, cheap), Sonnet for medium, Opus with adaptive thinking for leisurely cooking where deeper reasoning improves quality |
+| Supabase | Auth, database, and RPC functions in one platform — no separate auth service, no separate cache layer. Recipe cache, favorites, usage tracking, and user profiles all live in one place with a single set of credentials |
+| `expo-secure-store` | Encrypted on-device storage for JWT tokens — the correct default for mobile auth. Standard `AsyncStorage` is unencrypted; auth tokens need to survive app restarts and must not be readable by other apps |
 
 ---
 
