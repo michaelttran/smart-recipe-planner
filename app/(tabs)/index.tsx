@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -43,9 +44,10 @@ export default function HomeScreen() {
       return;
     }
 
+    const requestBase64 = Platform.OS === 'web';
     const result = useCamera
-      ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 0.85 })
-      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.85 });
+      ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 0.85, base64: requestBase64 })
+      : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.85, base64: requestBase64 });
 
     if (!result.canceled && result.assets[0]) {
       const asset = result.assets[0];
@@ -53,14 +55,20 @@ export default function HomeScreen() {
       const mediaType =
         ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
 
-      setReading(true);
-      try {
-        const base64 = await imageUriToBase64(asset.uri);
-        setPickedImage({ uri: asset.uri, base64, mediaType });
-      } catch (e) {
-        Alert.alert('Error', 'Could not read the selected photo. Please try again.');
-      } finally {
-        setReading(false);
+      if (asset.base64) {
+        setPickedImage({ uri: asset.uri, base64: asset.base64, mediaType });
+      } else {
+        setReading(true);
+        try {
+          const base64 = await imageUriToBase64(asset.uri);
+          if (!base64) throw new Error('Empty result');
+          setPickedImage({ uri: asset.uri, base64, mediaType });
+        } catch (e) {
+          const msg = 'Could not read the selected photo. Please try again.';
+          Platform.OS === 'web' ? window.alert(msg) : Alert.alert('Error', msg);
+        } finally {
+          setReading(false);
+        }
       }
     }
   }
