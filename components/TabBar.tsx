@@ -1,4 +1,4 @@
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, router } from 'expo-router';
@@ -14,13 +14,15 @@ export default function TabBar() {
   const discoverActive = !savedActive;
 
   function confirmSignOut() {
+    if (Platform.OS === 'web') {
+      if (window.confirm('Are you sure you want to sign out?')) {
+        supabase.auth.signOut();
+      }
+      return;
+    }
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Sign out',
-        style: 'destructive',
-        onPress: () => supabase.auth.signOut(),
-      },
+      { text: 'Sign out', style: 'destructive', onPress: () => supabase.auth.signOut() },
     ]);
   }
 
