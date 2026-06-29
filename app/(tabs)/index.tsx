@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system/legacy';
+import { imageUriToBase64 } from '@/lib/image-to-base64';
 import { router } from 'expo-router';
 import { setImage, getStore } from '@/lib/store';
 
@@ -55,9 +55,7 @@ export default function HomeScreen() {
 
       setReading(true);
       try {
-        const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        const base64 = await imageUriToBase64(asset.uri);
         setPickedImage({ uri: asset.uri, base64, mediaType });
       } catch (e) {
         Alert.alert('Error', 'Could not read the selected photo. Please try again.');
